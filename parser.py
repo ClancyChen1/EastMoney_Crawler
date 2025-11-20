@@ -2,6 +2,7 @@ from selenium.webdriver.common.by import By
 from selenium import webdriver
 from datetime import datetime
 import re
+import hashlib
 
 
 class PostParser(object):
@@ -95,15 +96,16 @@ class PostParser(object):
         return author_element.text
 
     def parse_post_info(self, html):
-        self.id += 1
         title = self.parse_post_title(html)
         view = self.parse_post_view(html)
         num = self.parse_comment_num(html)
         url = self.parse_post_url(html)
         date, time = self.parse_post_date(html)
         author = self.parse_post_author(html)
+        m = re.search(r'news,[^,]+,(\d+)\.html', url)
+        _id = int(m.group(1)) if m else int(hashlib.md5(url.encode()).hexdigest()[:16], 16)
         post_info = {
-            '_id': self.id,
+            '_id': _id,
             'post_title': title,
             'post_view': view,
             'comment_num': num,

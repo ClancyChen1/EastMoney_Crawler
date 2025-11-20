@@ -1,4 +1,5 @@
 from pymongo import MongoClient
+from pymongo.errors import BulkWriteError
 
 
 class MongoAPI(object):
@@ -15,8 +16,11 @@ class MongoAPI(object):
     def insert_one(self, kv_dict):
         self.collection.insert_one(kv_dict)
 
-    def insert_many(self, li_dict):  # more efficient
-        self.collection.insert_many(li_dict)
+    def insert_many(self, li_dict):
+        try:
+            self.collection.insert_many(li_dict, ordered=False)
+        except BulkWriteError:
+            pass
 
     def find_one(self, query1, query2):
         return self.collection.find_one(query1, query2)
