@@ -1,12 +1,16 @@
 from crawler import PostCrawler
 from crawler import CommentCrawler
 import threading
+import config
 
 
-def post_thread(stock_symbol, start_page, end_page):  # stock_symbol为股票的代码，page为想要爬取的页面范围
+def post_thread_by_page(stock_symbol, start_page, end_page):  # stock_symbol为股票的代码，page为想要爬取的页面范围
     post_crawler = PostCrawler(stock_symbol)
-    post_crawler.crawl_post_info(start_page, end_page)
+    post_crawler.crawl_post_info_by_page(start_page, end_page)
 
+def post_thread_by_time(stock_symbol, start_date, end_date):  # stock_symbol为股票的代码，date为想要爬取的日期范围
+    post_crawler = PostCrawler(stock_symbol)
+    post_crawler.crawl_post_info_by_time(start_date, end_date)
 
 def comment_thread_date(stock_symbol, start_date, end_date):  # stock_symbol为股票的代码，date为想要爬取的日期范围
     comment_crawler = CommentCrawler(stock_symbol)
@@ -23,12 +27,16 @@ def comment_thread_id(stock_symbol, start_id, end_id):  # stock_symbol为股票�
 if __name__ == "__main__":
 
     # 爬取发帖信息
-    thread1 = threading.Thread(target=post_thread, args=('000333', 1, 500))  # 设置想要爬取的股票代码，开始与终止页数
-    thread2 = threading.Thread(target=post_thread, args=('000729', 1, 500))  # 可同时进行多个线程
+    if config.select_posts_by == 'date':
+        thread1 = threading.Thread(target=post_thread_by_time, args=('000333', config.start_date, config.end_date))  # 设置想要爬取的股票代码，开始与终止日期
+        thread2 = threading.Thread(target=post_thread_by_time, args=('002027', config.start_date, config.end_date))  # 可同时进行多个线程
+    else:
+        thread1 = threading.Thread(target=post_thread_by_page, args=('000333', config.start_page, config.end_page))  # 设置想要爬取的股票代码，开始与终止页数
+        thread2 = threading.Thread(target=post_thread_by_page, args=('002027', config.start_page, config.end_page))  # 可同时进行多个线程
 
     # 爬取评论信息，注意需先爬取发帖信息储存到数据库里后才可以爬取评论信息（因为需要用到第一步中的url）
-    # thread1 = threading.Thread(target=comment_thread_date, args=('000333', '2020-01-01', '2023-12-31'))
-    # thread2 = threading.Thread(target=comment_thread_date, args=('000729', '2020-01-01', '2023-12-31'))
+    # thread1 = threading.Thread(target=comment_thread_date, args=('000333', '2026-01-01', '2026-01-31'))
+    # thread2 = threading.Thread(target=comment_thread_date, args=('000729', '2026-01-01', '2026-01-31'))
 
     # 中断之后重新通过_id接着爬取
     # thread1 = threading.Thread(target=comment_thread_id, args=('000651', 384942, 411959))
