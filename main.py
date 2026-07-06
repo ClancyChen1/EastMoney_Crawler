@@ -28,15 +28,15 @@ if __name__ == "__main__":
 
     # 爬取发帖信息
     if config.select_posts_by == 'date':
-        thread1 = threading.Thread(target=post_thread_by_time, args=('000333', config.start_date, config.end_date))  # 设置想要爬取的股票代码，开始与终止日期
-        thread2 = threading.Thread(target=post_thread_by_time, args=('002027', config.start_date, config.end_date))  # 可同时进行多个线程
+        thread1 = threading.Thread(target=post_thread_by_time, args=('300058', config.start_date, config.end_date))  # 设置想要爬取的股票代码，开始与终止日期
+        thread2 = threading.Thread(target=post_thread_by_time, args=('600549', config.start_date, config.end_date))  # 可同时进行多个线程
     else:
-        thread1 = threading.Thread(target=post_thread_by_page, args=('000333', config.start_page, config.end_page))  # 设置想要爬取的股票代码，开始与终止页数
-        thread2 = threading.Thread(target=post_thread_by_page, args=('002027', config.start_page, config.end_page))  # 可同时进行多个线程
+        thread1 = threading.Thread(target=post_thread_by_page, args=('300058', config.start_page, config.end_page))  # 设置想要爬取的股票代码，开始与终止页数
+        thread2 = threading.Thread(target=post_thread_by_page, args=('600549', config.start_page, config.end_page))  # 可同时进行多个线程
 
     # 爬取评论信息，注意需先爬取发帖信息储存到数据库里后才可以爬取评论信息（因为需要用到第一步中的url）
     # thread1 = threading.Thread(target=comment_thread_date, args=('000333', '2026-01-01', '2026-01-31'))
-    # thread2 = threading.Thread(target=comment_thread_date, args=('000729', '2026-01-01', '2026-01-31'))
+    # thread2 = threading.Thread(target=comment_thread_date, args=('002027', '2026-01-01', '2026-01-31'))
 
     # 中断之后重新通过_id接着爬取
     # thread1 = threading.Thread(target=comment_thread_id, args=('000651', 384942, 411959))

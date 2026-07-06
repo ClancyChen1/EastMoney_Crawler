@@ -5,15 +5,16 @@ import time
 import random
 import pandas as pd
 import os
+import string
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from urllib.parse import quote
 
 from mongodb import MongoAPI
 from parser import PostParser
 from parser import CommentParser
-from config import db_name
-
+from config import post_db_name, comment_db_name
 
 class PostCrawler(object):
 
@@ -23,44 +24,58 @@ class PostCrawler(object):
         self.start = time.time()  # calculate the time cost
 
     def create_webdriver(self):
-        options = webdriver.ChromeOptions()  # configure the webdriver
+        options = webdriver.ChromeOptions()
         options.add_argument('lang=zh_CN.UTF-8')
         options.add_argument('user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, '
-                             'like Gecko) Chrome/111.0.0.0 Safari/537.36"')
+                            'like Gecko) Chrome/111.0.0.0 Safari/537.36"')
         self.browser = webdriver.Chrome(options=options)
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # hide the features of crawler/selenium
+        current_dir = os.path.dirname(os.path.abspath(__file__))
         js_file_path = os.path.join(current_dir, 'stealth.min.js')
         with open(js_file_path) as f:
             js = f.read()
         self.browser.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": js
         })
+        
+        def generate_n_random(n):
+            # Generate a n-digit random number
+            random_number = random.randint(10**(n-1), 10**n - 1)
+            return random_number
 
-    def get_page_num(self):
-        self.browser.get(f'http://guba.eastmoney.com/list,{self.symbol},f_1.html')
-        page_element = self.browser.find_element(By.CSS_SELECTOR, 'ul.paging > li:nth-child(7) > a > span')
-        return int(page_element.text)
 
-    def __init__(self, stock_symbol: str):
-        self.browser = None
-        self.symbol = stock_symbol
-        self.start = time.time()  # calculate the time cost
+        cookie_string = f"qgqp_b_id={''.join(random.choices(string.ascii_lowercase + string.digits, k=32))}; \
+            st_si={generate_n_random(14)}; st_asi=delete; st_pvi={generate_n_random(14)}; \
+                st_sp={quote(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}; \
+                    st_inirUrl=https%3A%2F%2Fdata.eastmoney.com%2Fcjsj%2Fqyspjg.html; \
+                        st_sn=1; st_psi={datetime.now().strftime('%Y%m%d%H%M%S')}\
+                            {generate_n_random(2)}-{generate_n_random(12)}-{generate_n_random(12)}"
 
-    def create_webdriver(self):
-        options = webdriver.ChromeOptions()  # configure the webdriver
-        options.add_argument('lang=zh_CN.UTF-8')
-        options.add_argument('user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, '
-                             'like Gecko) Chrome/111.0.0.0 Safari/537.36"')
-        self.browser = webdriver.Chrome(options=options)
+        # 导入 cookie
+        self.browser.get('http://guba.eastmoney.com')  # 必须先访问域名
+        time.sleep(2)  # 等待页面加载
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # hide the features of crawler/selenium
-        js_file_path = os.path.join(current_dir, 'stealth.min.js')
-        with open(js_file_path) as f:
-            js = f.read()
-        self.browser.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": js
-        })
+
+        
+        # 解析 cookie 字符串为字典列表
+        cookies = []
+        for item in cookie_string.split('; '):
+            if '=' in item:
+                key, value = item.split('=', 1)
+                cookies.append({
+                    'name': key,
+                    'value': value,
+                    'domain': '.eastmoney.com'
+                })
+        
+        # 添加到浏览器
+        for cookie in cookies:
+            try:
+                self.browser.add_cookie(cookie)
+            except Exception as e:
+                print(f'{self.symbol}: 添加 cookie {cookie["name"]} 失败: {e}')
+        
+        print(f'{self.symbol}: 已导入 {len(cookies)} 个 cookie')
 
     def get_page_num(self):
         self.browser.get(f'http://guba.eastmoney.com/list,{self.symbol},f_1.html')
@@ -74,10 +89,12 @@ class PostCrawler(object):
         stop_page = min(page2, max_page)  # avoid out of the index
 
         parser = PostParser()  # must be created out of the 'while', as it contains the function about date
-        postdb = MongoAPI(db_name, f'post_{self.symbol}')  # connect the collection
+        postdb = MongoAPI(post_db_name, f'post_{self.symbol}')  # connect the collection
 
         while current_page <= stop_page:  # use 'while' instead of 'for' is crucial for exception handling
-            time.sleep(abs(random.normalvariate(0, 0.01)))  # random sleep time
+            # 随机睡眠1-2秒，均匀分布
+            time.sleep(abs(random.uniform(1.0, 2.0)))  # random sleep time
+            # time.sleep(abs(random.normalvariate(0.5, 0.03)))  # random sleep time
             url = f'http://guba.eastmoney.com/list,{self.symbol},f_{current_page}.html'
 
             try:
@@ -97,7 +114,7 @@ class PostCrawler(object):
 
             except Exception as e:
                 print(f'{self.symbol}: 第 {current_page} 页出现了错误 {e}')
-                time.sleep(0.01)
+                time.sleep(abs(random.uniform(1.0, 2.0)))
                 self.browser.refresh()
                 self.browser.delete_all_cookies()
                 self.browser.quit()  # if we don't restart the webdriver, our crawler will be restricted access speed
@@ -121,7 +138,7 @@ class PostCrawler(object):
         stop_page = max_page  # crawl until max page or time range exceeded
 
         parser = PostParser()
-        postdb = MongoAPI(db_name, f'post_{self.symbol}')
+        postdb = MongoAPI(post_db_name, f'post_{self.symbol}')
 
         start_datetime = datetime.strptime(start_date+' 00:00', '%Y-%m-%d %H:%M')
         end_datetime = datetime.strptime(end_date+' 23:59', '%Y-%m-%d %H:%M')
@@ -131,7 +148,7 @@ class PostCrawler(object):
         # 快速定位起始页码
         found_start_page = False
         while current_page <= stop_page and not found_start_page:
-            time.sleep(abs(random.normalvariate(0, 0.01)))
+            time.sleep(abs(random.uniform(1.0, 2.0)))
             url = f'http://guba.eastmoney.com/list,{self.symbol},f_{current_page}.html'
 
             try:
@@ -150,7 +167,7 @@ class PostCrawler(object):
 
                 li = list_item[-1]  # check the last post on the page
                 dic = parser.parse_post_info(li)
-                post_date = datetime.strptime(dic['post_date'], '%Y-%m-%d %H:%M')
+                post_date = datetime.strptime(dic['post_date']+' '+dic['post_time'], '%Y-%m-%d %H:%M')
                 if post_date > end_datetime:
                     current_page += 1
                     continue  # skip this page and all subsequent pages
@@ -162,7 +179,7 @@ class PostCrawler(object):
 
             except Exception as e:
                 print(f'{self.symbol}: 第 {current_page} 页出现了错误 {e}')
-                time.sleep(0.01)
+                time.sleep(abs(random.uniform(1.0, 2.0)))
                 self.browser.refresh()
                 self.browser.delete_all_cookies()
                 self.browser.quit()  # if we don't restart the webdriver, our crawler will be restricted access speed
@@ -172,7 +189,7 @@ class PostCrawler(object):
 
         should_stop = False
         while current_page <= stop_page and not should_stop:  # use 'while' instead of 'for' is crucial for exception handling
-            time.sleep(abs(random.normalvariate(0, 0.01)))  # random sleep time
+            time.sleep(abs(random.uniform(1.0, 2.0)))  # random sleep time
             url = f'http://guba.eastmoney.com/list,{self.symbol},f_{current_page}.html'
 
             try:
@@ -188,7 +205,7 @@ class PostCrawler(object):
                 
                 for li in list_item:  # get each post respectively
                     dic = parser.parse_post_info(li)
-                    post_date = datetime.strptime(dic['post_date'], '%Y-%m-%d %H:%M')
+                    post_date = datetime.strptime(dic['post_date']+' '+dic['post_time'], '%Y-%m-%d %H:%M')
                     
                     # 检查帖子时间是否在指定范围内
                     if start_datetime <= post_date <= end_datetime:
@@ -212,7 +229,7 @@ class PostCrawler(object):
 
             except Exception as e:
                 print(f'{self.symbol}: 第 {current_page} 页出现了错误 {e}')
-                time.sleep(0.01)
+                time.sleep(abs(random.uniform(1.0, 2.0)))
                 self.browser.refresh()
                 self.browser.delete_all_cookies()
                 self.browser.quit()  # if we don't restart the webdriver, our crawler will be restricted access speed
@@ -261,13 +278,53 @@ class CommentCrawler(object):
             "source": js
         })
 
+        def generate_n_random(n):
+            # Generate a n-digit random number
+            random_number = random.randint(10**(n-1), 10**n - 1)
+            return random_number
+
+
+        cookie_string = f"qgqp_b_id={''.join(random.choices(string.ascii_lowercase + string.digits, k=32))}; \
+            st_si={generate_n_random(14)}; st_asi=delete; st_pvi={generate_n_random(14)}; \
+                st_sp={quote(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}; \
+                    st_inirUrl=https%3A%2F%2Fdata.eastmoney.com%2Fcjsj%2Fqyspjg.html; \
+                        st_sn=1; st_psi={datetime.now().strftime('%Y%m%d%H%M%S')}\
+                            {generate_n_random(2)}-{generate_n_random(12)}-{generate_n_random(12)}"
+
+        # 导入 cookie
+        self.browser.get('http://guba.eastmoney.com')  # 必须先访问域名
+        time.sleep(2)  # 等待页面加载
+
+
+        
+        # 解析 cookie 字符串为字典列表
+        cookies = []
+        for item in cookie_string.split('; '):
+            if '=' in item:
+                key, value = item.split('=', 1)
+                cookies.append({
+                    'name': key,
+                    'value': value,
+                    'domain': '.eastmoney.com'
+                })
+        
+        # 添加到浏览器
+        for cookie in cookies:
+            try:
+                self.browser.add_cookie(cookie)
+            except Exception as e:
+                print(f'{self.symbol}: 添加 cookie {cookie["name"]} 失败: {e}')
+        
+        print(f'{self.symbol}: 已导入 {len(cookies)} 个 cookie')
+
+
     def find_by_date(self, start_date, end_date):
         # get comment urls through date (used for the first crawl)
         """
         :param start_date: '2003-07-21' 字符串格式 ≥
         :param end_date: '2024-07-21' 字符串格式 ≤
         """
-        postdb = MongoAPI(db_name, f'post_{self.symbol}')
+        postdb = MongoAPI(post_db_name, f'post_{self.symbol}')
         time_query = {
             'post_date': {'$gte': start_date, '$lte': end_date},
             'comment_num': {'$ne': 0}  # avoid fetching urls with no comment
@@ -281,7 +338,7 @@ class CommentCrawler(object):
         :param start_id: 721 整数 ≥
         :param end_id: 2003 整数 ≤
         """
-        postdb = MongoAPI(db_name, f'post_{self.symbol}')
+        postdb = MongoAPI(post_db_name, f'post_{self.symbol}')
         id_query = {
             '_id': {'$gte': start_id, '$lte': end_id},
             'comment_num': {'$ne': 0}  # avoid fetching urls with no comment
@@ -296,11 +353,11 @@ class CommentCrawler(object):
 
         self.create_webdriver()
         parser = CommentParser()
-        commentdb = MongoAPI('comment_info', f'comment_{self.symbol}')
+        commentdb = MongoAPI(comment_db_name, f'comment_{self.symbol}')
 
         for url in url_df:
             try:
-                time.sleep(abs(random.normalvariate(0.03, 0.01)))  # random sleep time
+                time.sleep(abs(random.uniform(1.0, 2.0)))  # random sleep time
 
                 try:  # sometimes the website needs to be refreshed (situation comment is loaded unsuccessfully)
                     self.browser.get(url)  # this function may also get timeout exception
